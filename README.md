@@ -50,6 +50,15 @@
 2. [spark-speedrun-qa.md](04-interview-cheatsheets/spark-speedrun-qa.md) — Блиц-справочник: 30 ключевых вопросов и ответов по Apache Spark и распределенной обработке.
 3. [real-interview-experience.md](04-interview-cheatsheets/real-interview-experience.md) — Практика прохождения собеседований: самопрезентация по модели STAR, разбор вопросов с подвохом, поведенческие вопросы (факапы и конфликты).
 
+### 05-dbms-optimization: Оптимизация и тюнинг производительности СУБД
+1. [01-universal-sql-optimization.md](05-dbms-optimization/01-universal-sql-optimization.md) — Универсальные правила: чтение `EXPLAIN`, SARGable предикаты, курсорная пагинация (Keyset Pagination) против `OFFSET`, антипаттерн N+1.
+2. [02-postgresql-optimization.md](05-dbms-optimization/02-postgresql-optimization.md) — Глубокая оптимизация PostgreSQL: `EXPLAIN (ANALYZE, BUFFERS)`, частичные и покрывающие индексы, BRIN, тюнинг `shared_buffers`/`work_mem`, борьба с Table Bloat и autovacuum, PgBouncer.
+3. [03-oracle-optimization.md](05-dbms-optimization/03-oracle-optimization.md) — Оптимизация Oracle Database: CBO, сбор статистики, гистограммы, подсказки оптимизатора (Hints), анализ отчетов AWR и событий ожидания (`db file sequential read`).
+4. [04-mysql-optimization.md](05-dbms-optimization/04-mysql-optimization.md) — Оптимизация MySQL & InnoDB: организация кластерного индекса, предотвращение Page Splits при использовании UUID, `innodb_buffer_pool_size`, анализ Slow Query Log через `pt-query-digest`.
+5. [05-greenplum-mpp-optimization.md](05-dbms-optimization/05-greenplum-mpp-optimization.md) — Оптимизация Greenplum (MPP): архитектура Master-Segment, стратегия распределения `DISTRIBUTED BY`, устранение Data Skew, ликвидация операторов Motion (Collocated Joins), колоночное сжатие ZSTD.
+6. [06-vertica-mpp-optimization.md](05-dbms-optimization/06-vertica-mpp-optimization.md) — Оптимизация OpenText Vertica: архитектура проекций (Projections), кодирование данных (RLE, DELTAVAL), Tuple Mover (WOS -> ROS), предотвращение ROS pushback через `COPY DIRECT`.
+7. [07-clickhouse-olap-optimization.md](05-dbms-optimization/07-clickhouse-olap-optimization.md) — Оптимизация ClickHouse: семейство `MergeTree`, разреженный индекс и гранулярность 8192, Data Skipping Indexes (Bloom filter), пакетная вставка, словари `dictGet` вместо тяжелых `JOIN`.
+
 ---
 
 ## 3. Дорожная карта подготовки (Roadmap) на 6 недель
