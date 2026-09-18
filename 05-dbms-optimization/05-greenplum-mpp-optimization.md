@@ -118,3 +118,14 @@ PARTITION BY RANGE (order_date) (
 ### Преимущества:
 1. Коэффициент сжатия $4\times - 8\times$ по сравнению с классическим PostgreSQL.
 2. При выполнении `SELECT SUM(amount) FROM ...` с диска читаются блоки только одной колонки `amount`.
+
+---
+
+## 6. Официальные источники и документация вендора
+
+Материалы основаны на официальной документации VMware Tanzu Greenplum 6 / 7 и Apache Greenplum (Cloudberry Database):
+- [VMware Tanzu Greenplum Best Practices Guide](https://docs.vmware.com/en/VMware-Greenplum/6/greenplum-database/best_practices-intro.html) — официальное руководство по выбору ключей `DISTRIBUTED BY`, предотвращению Data Skew и настройке памяти сегментов (`gp_vmem_protect_limit`).
+- [Greenplum Admin Guide: Defining Tables](https://docs.vmware.com/en/VMware-Greenplum/6/greenplum-database/admin_guide-ddl-ddl-table.html) — спецификация параметров Append-Only Columnar хранения (`ORIENTATION = COLUMN`, `COMPRESSTYPE = zstd`, `BLOCKSIZE`).
+- [Greenplum Query Tuning & GPorca](https://docs.vmware.com/en/VMware-Greenplum/6/greenplum-database/admin_guide-query-topics-query-tuning.html) — оптимизатор ORCA, анализ операторов Motion в `EXPLAIN ANALYZE` (`Broadcast`, `Redistribute`, `Gather`) и минимизация сетевого оверхеда Interconnect.
+- [Greenplum Toolkit: gp_toolkit Reference](https://docs.vmware.com/en/VMware-Greenplum/6/greenplum-database/ref_guide-gp_toolkit.html) — системные представления для поиска перекоса данных (`gp_toolkit.gp_skew_coefficients`).
+

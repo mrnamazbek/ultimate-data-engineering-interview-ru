@@ -102,3 +102,14 @@ ALTER SYSTEM SET PGA_AGGREGATE_TARGET = 32G SCOPE=BOTH;
 - **Range Partitioning**: по диапазону дат (`PARTITION BY RANGE (order_date)`). Обеспечивает **Partition Pruning**: при выборке за конкретный месяц дисковые сегменты других месяцев даже не открываются движком.
 - **List Partitioning**: по дискретному списку категорий или стран (`PARTITION BY LIST (country_code)`).
 - **Composite Partitioning (Композитное)**: двухуровневое разбиение (например, Range по дате + Hash по `user_id` для равномерного распределения внутри каждого месяца).
+
+---
+
+## 6. Официальные источники и документация вендора
+
+Все материалы верифицированы по официальной документации Oracle Database (19c / 21c / 23ai):
+- [Oracle Database SQL Tuning Guide](https://docs.oracle.com/en/database/oracle/oracle-database/19/tgsql/) — внутреннее устройство Cost-Based Optimizer, расчет селективности и кардинальности, гистограммы `DBMS_STATS`.
+- [Oracle Database Performance Tuning Guide](https://docs.oracle.com/en/database/oracle/oracle-database/19/tgdba/) — детальное описание событий ожидания (Wait Events), генерация и расшифровка отчетов AWR (Automatic Workload Repository) и ASH (Active Session History).
+- [Oracle Database Reference: Dynamic Performance (V$) Views](https://docs.oracle.com/en/database/oracle/oracle-database/19/refrn/dynamic-performance-views.html) — спецификация представлений `V$SQL`, `V$SESSION`, `V$ACTIVE_SESSION_HISTORY`, `V$SYSTEM_EVENT`.
+- [Oracle Database VLDB and Partitioning Guide](https://docs.oracle.com/en/database/oracle/oracle-database/19/vldbg/) — стратегии разбиения сверхбольших баз данных (Very Large Databases) и механизм Partition Pruning.
+

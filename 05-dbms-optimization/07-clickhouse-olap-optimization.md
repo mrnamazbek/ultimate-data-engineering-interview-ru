@@ -113,3 +113,15 @@ status String
 status LowCardinality(String)
 ```
 ClickHouse автоматически заменяет строки на целочисленные индексы словаря. Это сокращает объем таблицы на диске в 3–5 раз и ускоряет фильтрацию и агрегацию в разы благодаря векторным инструкциям процессора (SIMD).
+
+---
+
+## 7. Официальные источники и документация вендора
+
+Материалы основаны на официальной документации ClickHouse (версии 23.x / 24.x):
+- [ClickHouse Documentation: MergeTree Family Engines](https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/mergetree) — устройство разреженного индекса, гранулярность (`index_granularity = 8192`), механизм фоновых слияний (Parts & Merges).
+- [ClickHouse Documentation: Primary Keys and Sorting Keys](https://clickhouse.com/docs/en/optimize/sparse-primary-indexes) — разница между `PRIMARY KEY` и `ORDER BY`, правила упорядочивания колонок от низкой кардинальности к высокой.
+- [ClickHouse Documentation: Data Skipping Indexes](https://clickhouse.com/docs/en/optimize/skipping-indexes) — пропускные индексы `minmax`, `set`, `bloom_filter` и параметры гранулярности.
+- [ClickHouse Documentation: Dictionaries](https://clickhouse.com/docs/en/sql-reference/dictionaries) — настройка внешних In-Memory словарей (`dictGet`) для высокопроизводительного обогащения данных без `JOIN`.
+- [ClickHouse Documentation: Bulk Inserts & Async Inserts](https://clickhouse.com/docs/en/optimize/bulk-inserts) — рекомендации по размерам батчей и настройка `async_insert = 1` для предотвращения ошибки `Too many parts`.
+

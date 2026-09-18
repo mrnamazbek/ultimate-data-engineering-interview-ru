@@ -134,3 +134,15 @@ LIMIT 5;
 В PostgreSQL каждое клиентское подключение обслуживается отдельным системным процессом операционной системы, потребляющим 5–10 МБ памяти. При 1000 прямых подключений сервер падает из-за постоянного переключения контекста процессора.
 
 *Решение*: Развертывание **PgBouncer** в режиме `pool_mode = transaction`. Приложение держит тысячи легких клиентских соединений с PgBouncer, а сам пул соединений держит всего 30–50 постоянных соединений с реальным сервером PostgreSQL, обеспечивая максимальную пропускную способность.
+
+---
+
+## 7. Официальные источники и документация вендора
+
+Все рекомендации и параметры в данном руководстве соответствуют официальной документации PostgreSQL (версии 14, 15, 16):
+- [PostgreSQL Official Documentation: Performance Tips (Глава 14)](https://www.postgresql.org/docs/current/performance-tips.html) — разбор `EXPLAIN`, сбор статистики планировщика, оптимизация условий соединения.
+- [PostgreSQL Official Documentation: Server Configuration — Resource Consumption (Глава 20)](https://www.postgresql.org/docs/current/runtime-config-resource.html) — спецификация параметров `shared_buffers`, `work_mem`, `effective_cache_size`, `maintenance_work_mem`.
+- [PostgreSQL Official Documentation: Routine Vacuuming & Indexing (Глава 25)](https://www.postgresql.org/docs/current/routine-vacuuming.html) — механика очистки мертвых кортежей (dead tuples), предотвращение разрастания таблиц (bloat) и предотвращение Transaction ID Wraparound.
+- [PostgreSQL Official Documentation: Index Types (Глава 64)](https://www.postgresql.org/docs/current/indexes-types.html) — внутреннее устройство B-Tree, BRIN, GIN, GiST и синтаксис покрывающих индексов `INCLUDE`.
+- [PostgreSQL Module: pg_stat_statements](https://www.postgresql.org/docs/current/pgstatstatements.html) — профилирование выполнения запросов в оперативной памяти.
+

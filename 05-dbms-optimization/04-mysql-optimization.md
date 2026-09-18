@@ -98,3 +98,14 @@ log_queries_not_using_indexes = 1 # фиксировать запросы без
 pt-query-digest /var/log/mysql/mysql-slow.log > slow_report.txt
 ```
 Утилита сгруппирует запросы по сигнатурам и выведет Топ-10 запросов, генерирующих максимальную нагрузку на сервер (по параметрам Query Time, Lock Time, Rows Sent, Rows Examined).
+
+---
+
+## 5. Официальные источники и документация вендора
+
+Материалы основаны на официальной документации MySQL 8.0 / 8.4 LTS и базе знаний Percona:
+- [MySQL 8.4 Reference Manual: Chapter 10 Optimization](https://dev.mysql.com/doc/refman/8.4/en/optimization.html) — синтаксис `EXPLAIN`, оптимизация операций `JOIN`, `ORDER BY optimization` (механизм filesort) и покрывающие индексы (Covering Indexes).
+- [MySQL 8.4 Reference Manual: Chapter 17 The InnoDB Storage Engine](https://dev.mysql.com/doc/refman/8.4/en/innodb-storage-engine.html) — организация Clustered и Secondary индексов, структура страниц (B+ Tree Page Structure), управление буферным пулом `innodb_buffer_pool_size`.
+- [MySQL 8.4 Reference Manual: Redo Log Configuration](https://dev.mysql.com/doc/refman/8.4/en/innodb-redo-log.html) — параметры `innodb_redo_log_capacity` (начиная с MySQL 8.0.30) и `innodb_flush_log_at_trx_commit`.
+- [Percona Toolkit Documentation: pt-query-digest](https://docs.percona.com/percona-toolkit/pt-query-digest.html) — анализ производительности и профилирование лога медленных запросов.
+

@@ -92,3 +92,14 @@ DIRECT;
 Вместо ручного подбора проекций для сотен таблиц в Vertica встроен инструмент **Database Designer (DBD)**. 
 - Инженер подает в DBD файл со списком репрезентативных медленных запросов (`queries.sql`) и статистику объемов данных.
 - DBD прогоняет оптимизационный алгоритм, генерирует DDL-скрипт с набором идеальных проекций, кодировок и ключей сортировки, а затем автоматически перестраивает физическое хранение.
+
+---
+
+## 5. Официальные источники и документация вендора
+
+Материалы основаны на официальной документации OpenText Vertica 12.x / 24.x:
+- [OpenText Vertica Documentation: Database Design](https://docs.vertica.com/latest/en/architecture/database-design/) — физическая архитектура проекций (Projections), сегментация по хэшу и репликация на все узлы (`UNSEGMENTED`).
+- [Vertica Documentation: Column Encodings](https://docs.vertica.com/latest/en/sql-reference/data-types/column-encodings/) — правила выбора кодировок: RLE, DELTAVAL, BLOCKDICT, AUTO и алгоритм сжатия LZO/ZSTD.
+- [Vertica Documentation: The Tuple Mover](https://docs.vertica.com/latest/en/admin/tuple-mover/) — жизненный цикл WOS и ROS, операции Moveout и Mergeout, предотвращение `ROS pushback` через флаг `DIRECT`.
+- [Vertica Documentation: Using Database Designer](https://docs.vertica.com/latest/en/admin/database-designer/) — автоматическое проектирование физической схемы под нагрузку.
+
