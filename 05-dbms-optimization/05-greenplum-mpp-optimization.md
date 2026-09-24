@@ -121,11 +121,98 @@ PARTITION BY RANGE (order_date) (
 
 ---
 
-## 6. Официальные источники и документация вендора
+---
+
+## 6. Системный словарь данных и мониторинг кластера
+
+В отличие от стандартного PostgreSQL, в Greenplum системный словарь содержит специализированные представления для управления распределенной топологией:
+
+### 6.1. Диагностика состояния сегментов: `gp_segment_configuration`
+Главная таблица администратора и дата-инженера для контроля здоровья кластера:
+
+```sql
+SELECT 
+    dbid, 
+    content, 
+    role,       -- 'p' (primary) или 'm' (mirror)
+    preferred_role,
+    mode,       -- 's' (synchronized) или 'r' (resynchronizing)
+    status,     -- 'u' (up / работает) или 'd' (down / сбой)
+    port, 
+    hostname
+FROM gp_segment_configuration
+ORDER BY content, role;
+```
+
+> **Сигнал тревоги**: Если `role != preferred_role` или `status = 'd'`, произошел сбой первичного сегмента, и трафик переключился на резервное зеркало. Для восстановления синхронизации требуется системная утилита `gprecoverseg`.
+
+### 6.2. Аудит политик распределения: `gp_distribution_policy`
+Позволяет быстро найти все таблицы в базе, которые были ошибочно созданы со случайным распределением (`DISTRIBUTED RANDOMLY`):
+
+```sql
+SELECT 
+    n.nspname AS schema_name,
+    c.relname AS table_name,
+    CASE 
+        WHEN p.policytype = 'p' AND p.distkey IS NULL THEN 'DISTRIBUTED RANDOMLY'
+        WHEN p.policytype = 'r' THEN 'DISTRIBUTED REPLICATED'
+        ELSE 'DISTRIBUTED BY KEY'
+    END AS distribution_type
+FROM pg_class c
+JOIN pg_namespace n ON n.oid = c.relnamespace
+JOIN gp_distribution_policy p ON p.localoid = c.oid
+WHERE n.nspname NOT IN ('pg_catalog', 'information_schema', 'gp_toolkit');
+```
+
+---
+
+## 7. Высокоскоростная параллельная загрузка: gpfdist и External Tables
+
+Классическая команда `COPY` в Greenplum является бутылочным горлышком: все терабайты данных вынуждены проходить через один Master-узел, который парсит строки и рассылает их по сети сегментам.
+
+Для параллельной загрузки Big Data используется утилита **`gpfdist`**:
+
+```
+                       [ Файловый сервер / ETL хост ]
+                               (gpfdist:8081)
+                                     │
+         ┌───────────────────────────┼───────────────────────────┐
+         ▼ (HTTP параллельно)        ▼ (HTTP параллельно)        ▼ (HTTP параллельно)
+   [ Segment 1 ]               [ Segment 2 ]               [ Segment 3 ]
+   (Читает чанк 1)             (Читает чанк 2)             (Читает чанк 3)
+```
+
+1. На сервере с исходными CSV/текстовыми файлами запускается демон `gpfdist`:
+   ```bash
+   gpfdist -d /data/incoming -p 8081 -l /var/log/gpfdist.log &
+   ```
+2. В Greenplum создается **внешняя таблица (External Table)**:
+   ```sql
+   CREATE EXTERNAL TABLE ext_clickstream (
+       event_id BIGINT,
+       user_id BIGINT,
+       event_time TIMESTAMPTZ,
+       payload TEXT
+   )
+   LOCATION ('gpfdist://etl-host:8081/clickstream_*.csv')
+   FORMAT 'CSV' (DELIMITER ',' HEADER)
+   ENCODING 'UTF8';
+   ```
+3. Загрузка во внутреннюю колоночную таблицу выполняется за один запрос:
+   ```sql
+   INSERT INTO fact_clickstream SELECT * FROM ext_clickstream;
+   ```
+Каждый сегмент Greenplum устанавливает собственное независимое HTTP-соединение с `gpfdist` и выкачивает свою порцию данных параллельно со скоростью работы физической сети.
+
+---
+
+## 8. Официальные источники и документация вендора
 
 Материалы основаны на официальной документации VMware Tanzu Greenplum 6 / 7 и Apache Greenplum (Cloudberry Database):
 - [VMware Tanzu Greenplum Best Practices Guide](https://docs.vmware.com/en/VMware-Greenplum/6/greenplum-database/best_practices-intro.html) — официальное руководство по выбору ключей `DISTRIBUTED BY`, предотвращению Data Skew и настройке памяти сегментов (`gp_vmem_protect_limit`).
 - [Greenplum Admin Guide: Defining Tables](https://docs.vmware.com/en/VMware-Greenplum/6/greenplum-database/admin_guide-ddl-ddl-table.html) — спецификация параметров Append-Only Columnar хранения (`ORIENTATION = COLUMN`, `COMPRESSTYPE = zstd`, `BLOCKSIZE`).
 - [Greenplum Query Tuning & GPorca](https://docs.vmware.com/en/VMware-Greenplum/6/greenplum-database/admin_guide-query-topics-query-tuning.html) — оптимизатор ORCA, анализ операторов Motion в `EXPLAIN ANALYZE` (`Broadcast`, `Redistribute`, `Gather`) и минимизация сетевого оверхеда Interconnect.
 - [Greenplum Toolkit: gp_toolkit Reference](https://docs.vmware.com/en/VMware-Greenplum/6/greenplum-database/ref_guide-gp_toolkit.html) — системные представления для поиска перекоса данных (`gp_toolkit.gp_skew_coefficients`).
+- [Greenplum gpfdist Parallel File Server](https://docs.vmware.com/en/VMware-Greenplum/6/greenplum-database/utility_guide-ref-gpfdist.html) — архитектура и параметры протокола параллельной загрузки данных.
+
 

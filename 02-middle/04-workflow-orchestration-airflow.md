@@ -128,3 +128,120 @@ airflow dags backfill \
     --reset-dagruns \
     my_etl_pipeline
 ```
+
+---
+
+## 7. Разработка кастомных плагинов: Hooks, Operators и Sensors
+
+В реальных проектах возможностей стандартных операторов недостаточно. Например, требуется взаимодействовать с внутренней CRM-системой, специфическим API банка или кастомным хранилищем.
+
+### 7.1. Разделение ответственности: Hook против Operator
+В архитектуре Airflow действует строгое разделение:
+- **Hook (Хук)**: отвечает исключительно за **подключение и низкоуровневый протокол** к внешней системе (управление сетевой сессией, авторизацией, ретраями HTTP/TCP). Хук ничего не знает о графе DAG.
+- **Operator (Оператор)**: отвечает за **бизнес-логику шага** (что сделать с данными, куда передать). Оператор внутри себя вызывает соответствующий Hook.
+
+### 7.2. Практический пример: Кастомный Hook и Operator
+
+```python
+# plugins/custom_crm_plugin.py
+from airflow.hooks.base import BaseHook
+from airflow.models import BaseOperator
+from airflow.utils.decorators import apply_defaults
+import requests
+
+# 1. Кастомный хук для авторизации и обращения к API
+class CrmApiHook(BaseHook):
+    def __init__(self, crm_conn_id: str = "crm_default"):
+        super().__init__()
+        self.crm_conn_id = crm_conn_id
+
+    def get_conn(self):
+        # Получение хоста, логина и пароля из защищенного хранилища Airflow Connections
+        conn = self.get_connection(self.crm_conn_id)
+        session = requests.Session()
+        session.headers.update({"Authorization": f"Bearer {conn.password}"})
+        return conn.host, session
+
+    def fetch_leads(self, target_date: str):
+        host, session = self.get_conn()
+        response = session.get(f"{host}/api/v1/leads", params={"date": target_date}, timeout=30)
+        response.raise_for_status()
+        return response.json()
+
+# 2. Кастомный оператор, использующий созданный хук
+class CrmToS3Operator(BaseOperator):
+    # template_fields указывает поля, в которых работает Jinja-шаблонизация!
+    template_fields = ("target_date", "s3_key")
+
+    @apply_defaults
+    def __init__(self, target_date: str, s3_key: str, crm_conn_id: str = "crm_default", **kwargs):
+        super().__init__(**kwargs)
+        self.target_date = target_date
+        self.s3_key = s3_key
+        self.crm_conn_id = crm_conn_id
+
+    def execute(self, context):
+        self.log.info(f"Запуск выгрузки лидов за дату: {self.target_date}")
+        hook = CrmApiHook(crm_conn_id=self.crm_conn_id)
+        leads_data = hook.fetch_leads(self.target_date)
+        self.log.info(f"Успешно получено {len(leads_data)} записей. Сохранение в {self.s3_key}")
+        # Сохранение в S3 или возвращение пути через XCom
+        return self.s3_key
+```
+
+---
+
+## 8. Архитектура и эксплуатация продакшн-кластера Airflow
+
+Для отказоустойчивой работы под нагрузкой в сотни DAG разворачивается распределенный кластер:
+
+```
+                  [ Load Balancer (Nginx / Ingress) ]
+                                   │
+              ┌────────────────────┴────────────────────┐
+              ▼                                         ▼
+     [ Webserver Replica 1 ]                   [ Webserver Replica 2 ]
+              │                                         │
+              └────────────────────┬────────────────────┘
+                                   │
+                     [ PostgreSQL HA Metastore ] ◄────────┐
+                                   │                      │
+              ┌────────────────────┴────────────────────┐ │
+              ▼                                         ▼ │
+     [ Scheduler Leader ]                      [ Scheduler Standby ]
+              │                                         │
+              └────────────────────┬────────────────────┘
+                                   │ (Отправка task_id)
+                                   ▼
+                       [ Message Broker (Redis) ]
+                                   │
+              ┌────────────────────┼────────────────────┐
+              ▼                    ▼                    ▼
+     [ Celery Worker 1 ]  [ Celery Worker 2 ]  [ Celery Worker 3 ]
+     (Concurrency: 16)    (Concurrency: 16)    (Concurrency: 16)
+              │                    │                    │
+              └────────────────────┴────────────────────┘
+                                   │
+                       (Сброс логов выполнения)
+                                   ▼
+                       [ Remote Storage: S3 / GCS ]
+```
+
+### Ключевые настройки производительности (`airflow.cfg`):
+1. **`dag_dir_list_interval`** (по умолчанию 300 сек): как часто планировщик ищет новые файлы DAG.
+2. **`min_file_process_interval`** (по умолчанию 30 сек): интервал повторного парсинга одного DAG-файла. Увеличение до 60–120 секунд снижает нагрузку на CPU планировщика на 40-50%.
+3. **DAG Serialization**: начиная с Airflow 2.0 веб-сервер больше не исполняет Python-код DAG файлов на диске напрямую, а читает сериализованный JSON-граф из базы метаданных. Это устраняет риск взлома или падения веб-сервера из-за некорректного кода DAG.
+4. **Remote Logging**: воркеры в Celery/K8s сбрасывают логи тасок в S3/GCS. Это позволяет безопасно удалять и пересоздавать узлы воркеров без потери логов для отладки.
+
+---
+
+## 9. Вопросы с собеседований
+
+### Вопрос 1: Что произойдет, если в теле DAG-файла написать подключение к базе данных или тяжелый расчет вне оператора?
+**Ответ**:
+Это грубейший антипаттерн (Top-Level Python Code). Планировщик Airflow циклически исполняет (парсит) весь файл каждые несколько секунд для построения графа. Если внутри файла вне функций оператора расположен запрос к БД или внешний HTTP-запрос, планировщик будет открывать соединения к базе сотни раз в минуту, что приведет к исчерпанию пула соединений СУБД (Connection Starvation) и зависанию самого Scheduler. Любые подключения и расчеты должны находиться строго внутри метода `execute()` оператора или внутри Python-функции `PythonOperator`.
+
+### Вопрос 2: Как безопасно перезапустить упавшую часть большого DAG без пересчета успешных шагов?
+**Ответ**:
+В веб-интерфейсе Airflow (или через CLI `airflow tasks clear`) можно очистить состояние конкретной упавшей задачи с флагом `Downstream`. В этом случае все предшествующие успешные задачи останутся в статусе `success`, а упавшая таска и все зависящие от нее downstream-шаги перейдут в статус `queued` и будут корректно пересчитаны.
+
