@@ -27,6 +27,16 @@ END;
 ### Гистограммы (Histograms)
 Если колонка имеет сильный перекос значений (например, 99% клиентов из одного региона и 1% из других), обычный расчет селективности ошибается. Гистограммы (`Frequency`, `Top-Frequency`, `Hybrid`) позволяют CBO знать точное распределение частотности значений и выбирать индекс только для редких значений.
 
+### Наглядно: кардинальность определяет выбор JOIN
+
+```text
+Оптимизатор ожидает 10 строк → выбирает короткий nested loop
+Фактически 1 млн → дорогие повторные lookup
+Статистика/гистограмма/корреляция → более подходящая оценка
+```
+
+Статистика помогает плану, но не исправляет неверную бизнес-логику. Для skewed значений один план может не быть оптимален для всех параметров.
+
 ---
 
 ## 2. Подсказки оптимизатора (Optimizer Hints)
@@ -59,6 +69,16 @@ SELECT /*+ PARALLEL(f 8) */
 FROM fact_large_sales f;
 ```
 
+### Наглядно: hint и фактический план
+
+```text
+SQL + hint → optimizer → plan
+Hint не распознан/неприменим/конфликтует → может быть проигнорирован
+Проверить фактический plan, а не наличие текста hint
+```
+
+Подсказку применяют под проверенную причину и workload. Изменение размера данных может сделать ранее удачный hint вредным.
+
 ---
 
 ## 3. Анализ производительности: Отчеты AWR и события ожидания (Wait Events)
@@ -79,6 +99,16 @@ FROM fact_large_sales f;
    - Сессия ожидает, пока процесс LGWR сбросит буфер Redo Log на диск при фиксации транзакции (`COMMIT`).
    - *Что означает*: слишком частые коммиты внутри мелких циклов (`COMMIT` на каждую строку) или медленный диск под журналами повтора.
 
+### Наглядно: ожидание указывает на ресурс
+
+```text
+Большая доля времени в I/O wait → проверить путь чтения и план
+Большая доля lock wait → блокирующие транзакции
+CPU time → объём вычислений и число обработанных строк
+```
+
+Имя wait event не является полным диагнозом. Сопоставьте SQL, конкуренцию, время и объём; отчёт помогает найти направление, а не автоматически задаёт исправление.
+
 ---
 
 ## 4. Память: Архитектура SGA и PGA
@@ -94,6 +124,16 @@ FROM fact_large_sales f;
 ALTER SYSTEM SET PGA_AGGREGATE_TARGET = 32G SCOPE=BOTH;
 ```
 
+### Наглядно: общая и рабочая память
+
+```text
+SGA: общие buffers/служебные структуры экземпляра
+PGA: рабочая память процесса для sort/hash и другого состояния
+Не хватает рабочей памяти → возможный spill в TEMP
+```
+
+Увеличение общего кэша не обязательно исправит тяжёлую сортировку. Оценивайте одновременно активные сессии и TEMP I/O.
+
 ---
 
 ## 5. Партиционирование таблиц (Partitioning)
@@ -102,6 +142,16 @@ ALTER SYSTEM SET PGA_AGGREGATE_TARGET = 32G SCOPE=BOTH;
 - **Range Partitioning**: по диапазону дат (`PARTITION BY RANGE (order_date)`). Обеспечивает **Partition Pruning**: при выборке за конкретный месяц дисковые сегменты других месяцев даже не открываются движком.
 - **List Partitioning**: по дискретному списку категорий или стран (`PARTITION BY LIST (country_code)`).
 - **Composite Partitioning (Композитное)**: двухуровневое разбиение (например, Range по дате + Hash по `user_id` для равномерного распределения внутри каждого месяца).
+
+### Наглядно: partition pruning вместо полного чтения
+
+```text
+orders за 36 месяцев → predicate одного месяца
+Совместимый partition key → подходящий раздел
+Локальные индексы/обслуживание → отдельные свойства схемы
+```
+
+Фильтр должен позволять pruning с нужными типами. Число разделов, global indexes и операции обслуживания влияют на стоимость; партиционирование не заменяет правильный JOIN.
 
 ---
 
@@ -112,4 +162,3 @@ ALTER SYSTEM SET PGA_AGGREGATE_TARGET = 32G SCOPE=BOTH;
 - [Oracle Database Performance Tuning Guide](https://docs.oracle.com/en/database/oracle/oracle-database/19/tgdba/) — детальное описание событий ожидания (Wait Events), генерация и расшифровка отчетов AWR (Automatic Workload Repository) и ASH (Active Session History).
 - [Oracle Database Reference: Dynamic Performance (V$) Views](https://docs.oracle.com/en/database/oracle/oracle-database/19/refrn/dynamic-performance-views.html) — спецификация представлений `V$SQL`, `V$SESSION`, `V$ACTIVE_SESSION_HISTORY`, `V$SYSTEM_EVENT`.
 - [Oracle Database VLDB and Partitioning Guide](https://docs.oracle.com/en/database/oracle/oracle-database/19/vldbg/) — стратегии разбиения сверхбольших баз данных (Very Large Databases) и механизм Partition Pruning.
-

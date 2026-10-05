@@ -14,6 +14,15 @@
 
 **Kubernetes (K8s)** объединил инфраструктуру: сегодня он стал единым стандартом развертывания как микросервисов, так и распределенных платформ данных (Spark, Airflow, Trino, Kafka, ClickHouse).
 
+### Наглядно: контроллер поддерживает желаемое состояние
+
+```text
+Манифест: нужны 3 replicas → контроллер сравнивает с фактическим состоянием
+Одна Pod потеряна → создаётся замена → Scheduler выбирает узел
+```
+
+Перезапуск процесса не гарантирует восстановление данных или корректность побочного эффекта. Kubernetes и YARN выбирают с учётом среды и эксплуатации.
+
 ---
 
 ## 2. Базовые концепции и абстракции Kubernetes для Data Engineer
@@ -46,6 +55,17 @@
 ### 2.3. Конфигурация и безопасность
 - **ConfigMap**: хранение неконфиденциальных параметров и конфигурационных файлов (`spark-defaults.conf`, `airflow.cfg`).
 - **Secret**: хранение паролей, токенов и ключей доступа (к S3, базам данных) в закодированном виде Base64 с интеграцией с HashiCorp Vault.
+
+### Наглядно: Pod, диск и секрет
+
+```text
+Pod → использует PVC → связанный PV; StorageClass задаёт provisioning
+Deployment → заменяемые stateless replicas
+StatefulSet → стабильные имена/связь с томами
+ConfigMap → настройки; Secret → чувствительные значения с контролем доступа
+```
+
+StatefulSet не реализует протокол репликации БД автоматически. Base64 в Secret — кодирование; нужны подходящие RBAC и защита хранения. Данные в ephemeral storage не переживают удаление Pod.
 
 ---
 
@@ -141,6 +161,16 @@ kubectl apply -f spark-etl.yaml
 ```
 Оператор сам отслеживает жизненный цикл, перезапускает упавшие поды и собирает статус в состояние ресурса.
 
+### Наглядно: native submit и operator
+
+```text
+Native: spark-submit → Driver Pod → запрос Executor Pods
+Operator: SparkApplication → reconciliation → запуск Spark и управление состоянием
+Оба пути: образ, service account, сеть, storage и resources
+```
+
+Requests влияют на scheduling; CPU limit может ограничивать CPU, memory limit — приводить к OOMKill. Образ и конфигурация должны быть воспроизводимы; Operator не устраняет необходимость понимать Spark.
+
 ---
 
 ## 4. Apache Airflow на Kubernetes: Celery vs KubernetesExecutor
@@ -181,6 +211,16 @@ with DAG("k8s_container_pipeline", start_date=datetime(2026, 1, 1), schedule="@d
     )
 ```
 
+### Наглядно: executor Airflow и отдельный Pod задачи
+
+```text
+CeleryExecutor → worker запускает задачу
+KubernetesExecutor → задача исполняется в task Pod
+KubernetesPodOperator → сама задача создаёт отдельный workload Pod
+```
+
+KubernetesPodOperator можно использовать с разными executors. Не путайте инфраструктуру исполнения task с Pod, который эта task запускает для внешней работы.
+
 ---
 
 ## 5. Вопросы с Senior собеседований
@@ -191,9 +231,11 @@ with DAG("k8s_container_pipeline", start_date=datetime(2026, 1, 1), schedule="@d
 Современные решения в Spark 3.x:
 1. **Shuffle Tracking (Dynamic Allocation)**: Spark Driver отслеживает, на каких экзекьюторах остались shuffle-файлы, и откладывает их удаление до тех пор, пока данные не будут прочитаны редьюсерами.
 2. **Push-Based Shuffle (Magnet)**: экзекьюторы сливают блоки shuffle на выделенные серверы слияния.
-3. Использование облачного объектного хранилища (S3/GCS) или быстрых распределенных хранилищ (Alluxio / Ceph PVC) в качестве директории сброса данных (`spark.local.dir`).
+3. **Поддерживаемые механизмы сохранения/восстановления shuffle**: PVC-based recovery, decommissioning или подходящий remote shuffle plugin — если их поддерживает конкретная версия и конфигурация. Простая подстановка `s3://...` в `spark.local.dir` не превращает локальный shuffle в объектный storage: эта настройка ожидает доступные файловые пути.
+
+Shuffle tracking помогает при плановом удалении executor, но не предотвращает аварийную потерю Pod/диска. Потерянные блоки могут требовать повторного выполнения upstream tasks по lineage. Возможность push-based shuffle и внешний сервис слияния проверяют для выбранного cluster manager.
 
 ### Вопрос 2: В чем разница между `requests` и `limits` ресурсов в манифесте K8s для Data Engineering задач?
 **Ответ**:
-- **`requests`**: гарантированный минимум ресурсов (CPU, RAM), который планировщик (kube-scheduler) обязан найти на физической ноде для размещения пода. Если свободного объема `requests` на нодах нет, под остается в статусе `Pending`.
-- **`limits`**: жесткий потолок потребления. Если контейнер превышает limit по CPU, Kubernetes включает троттлинг (замедляет выполнение). Если контейнер превышает limit по RAM (Memory), ядро Linux немедленно убивает процесс с ошибкой **OOMKilled (Exit Code 137)**. Для стабильной работы Spark-экзекьюторов рекомендуется задавать `limits.memory` с запасом на память JVM Off-Heap (`spark.executor.memoryOverhead`).
+- **`requests`**: заявленная потребность, используемая scheduler при выборе узла и распределении ресурсов. Если Pod не помещается в доступную allocatable capacity по requests, он может остаться Pending. Это не универсальная гарантия эксклюзивного CPU или реального размера рабочего набора памяти.
+- **`limits`**: ограничение потребления. CPU limit может приводить к throttling, memory limit — к OOM kill при попытке превысить доступную память. Exit code 137 сам по себе не доказывает OOM: проверьте reason и события. Для Spark учитывайте JVM heap, native memory, Python workers и overhead.

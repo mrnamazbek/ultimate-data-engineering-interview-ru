@@ -26,6 +26,16 @@ GROUP BY u.id, u.email;
 3. **Расхождение строк (Rows Estimation)**:
    - Если оценка планировщика `rows=10`, а фактически вернулось `actual rows=250000`, статистика устарела. Планировщик ошибочно выберет медленный `Nested Loop` вместо быстрого `Hash Join`. Необходимо выполнить `ANALYZE table_name;`.
 
+### Наглядно: loops и buffers объясняют стоимость
+
+```text
+Node: actual rows=100, loops=10 000 → много повторной работы
+Buffers hit → обращения к shared buffers
+Buffers read → блоки подгружались; timing → время выполнения
+```
+
+Не складывайте времена родительских и дочерних узлов как независимые. Buffer hit не означает нулевую стоимость, а read не всегда означает физическое чтение с диска ОС.
+
 ---
 
 ## 2. Специализированные типы индексов в PostgreSQL
@@ -61,6 +71,17 @@ CREATE INDEX idx_users_email_inc ON users(email) INCLUDE (name, phone);
 SELECT name, phone FROM users WHERE email = 'client@example.com';
 ```
 
+### Наглядно: индекс под оператор и форму данных
+
+```text
+B-tree → equality/range по упорядоченному ключу
+GIN → содержимое составного значения (например, подходящий JSONB оператор)
+BRIN → диапазоны страниц при корреляции значения с хранением
+Partial index → только строки predicate; INCLUDE → нужный payload
+```
+
+Index-only scan зависит также от visibility map; покрытие не отменяет все heap fetches. Выбирайте индекс по плану и учитывайте стоимость записи/обслуживания.
+
 ---
 
 ## 3. Настройка параметров конфигурации (`postgresql.conf`)
@@ -75,6 +96,16 @@ SELECT name, phone FROM users WHERE email = 'client@example.com';
 | `maintenance_work_mem` | От 1GB до 2GB | Память под регламентные задачи: `VACUUM`, `CREATE INDEX`, добавление внешних ключей |
 | `random_page_cost` | 1.1 (для NVMe/SSD) | По умолчанию стоит 4.0 (рассчитано на старые HDD). Для современных SSD снизьте до 1.1, чтобы планировщик охотнее использовал индексы |
 | `checkpoint_completion_target` | 0.9 | Сглаживает пики дисковой записи контрольных точек, растягивая I/O на 90% времени между чекпоинтами |
+
+### Наглядно: work_mem не общий лимит процесса
+
+```text
+Несколько sort/hash nodes × несколько workers × несколько queries
+→ много одновременно выделенной памяти
+Увеличить work_mem для одного запроса → риск суммарной нагрузки
+```
+
+Hash memory multiplier и фактические планы влияют на расход. Не умножайте единственную настройку на один connection и не считайте результат гарантированным потолком.
 
 ---
 
@@ -107,6 +138,16 @@ ORDER BY n_dead_tup DESC
 LIMIT 10;
 ```
 
+### Наглядно: долгий snapshot задерживает очистку
+
+```text
+UPDATE → old tuple + new tuple
+Long transaction ещё может видеть old → VACUUM не удаляет её
+Snapshot завершился → cleanup становится возможен
+```
+
+Контролируйте длительные и idle-in-transaction sessions. Обычный VACUUM освобождает место внутри таблицы, а не гарантированно уменьшает файл.
+
 ---
 
 ## 5. Мониторинг тяжелых запросов через `pg_stat_statements`
@@ -127,6 +168,15 @@ ORDER BY total_exec_time DESC
 LIMIT 5;
 ```
 
+### Наглядно: частота против длительности
+
+```text
+Query A: 1 мс × 1 000 000 вызовов = ~1000 с суммарно
+Query B: 10 с × 10 вызовов = ~100 с суммарно
+```
+
+Выбирайте цель по total time, mean, calls и ресурсам. Среднее скрывает хвост задержки; агрегированные статистики не заменяют конкретный execution plan.
+
 ---
 
 ## 6. Пул соединений: PgBouncer
@@ -134,6 +184,16 @@ LIMIT 5;
 В PostgreSQL каждое клиентское подключение обслуживается отдельным системным процессом операционной системы, потребляющим 5–10 МБ памяти. При 1000 прямых подключений сервер падает из-за постоянного переключения контекста процессора.
 
 *Решение*: Развертывание **PgBouncer** в режиме `pool_mode = transaction`. Приложение держит тысячи легких клиентских соединений с PgBouncer, а сам пул соединений держит всего 30–50 постоянных соединений с реальным сервером PostgreSQL, обеспечивая максимальную пропускную способность.
+
+### Наглядно: клиентские сессии и реальные соединения
+
+```text
+1000 clients → PgBouncer → меньший пул DB connections
+Transaction pooling: BEGIN..COMMIT использует соединение
+Следующая транзакция клиента может получить другое соединение
+```
+
+Сессионное состояние, temp tables и prepared statements требуют учёта режима и версии pooler. Пул уменьшает стоимость соединений, но не создаёт дополнительную мощность БД.
 
 ---
 
@@ -145,4 +205,3 @@ LIMIT 5;
 - [PostgreSQL Official Documentation: Routine Vacuuming & Indexing (Глава 25)](https://www.postgresql.org/docs/current/routine-vacuuming.html) — механика очистки мертвых кортежей (dead tuples), предотвращение разрастания таблиц (bloat) и предотвращение Transaction ID Wraparound.
 - [PostgreSQL Official Documentation: Index Types (Глава 64)](https://www.postgresql.org/docs/current/indexes-types.html) — внутреннее устройство B-Tree, BRIN, GIN, GiST и синтаксис покрывающих индексов `INCLUDE`.
 - [PostgreSQL Module: pg_stat_statements](https://www.postgresql.org/docs/current/pgstatstatements.html) — профилирование выполнения запросов в оперативной памяти.
-

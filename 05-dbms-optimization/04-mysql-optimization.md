@@ -40,6 +40,16 @@ MySQL с транзакционным движком **InnoDB** — одна и�
 - Размер таблицы раздувается в 2–3 раза из-за полупустых страниц, а скорость дисковой записи падает на 80%.
 - *Правило*: В качестве Primary Key всегда используйте монотонно возрастающие целочисленные ключи (`BIGINT AUTO_INCREMENT`) или упорядоченные во времени UUID (ULID / UUID v7).
 
+### Наглядно: двойной путь вторичного индекса InnoDB
+
+```text
+Secondary index(email) → primary key id
+Primary clustered index(id) → строка
+Покрывающий secondary index → иногда строку читать не требуется
+```
+
+Большой primary key увеличивает payload вторичных индексов. Случайные ключи могут усиливать page splits и ухудшать locality; эффект измеряют, не объявляя любой UUID непригодным.
+
 ---
 
 ## 2. Анализ планов выполнения: `EXPLAIN` в MySQL
@@ -69,6 +79,16 @@ LIMIT 10;
 - `Using temporary`: **Опасно**. СУБД создала временную таблицу в памяти или на диске для выполнения `GROUP BY` или `DISTINCT`.
 - `Using filesort`: **Опасно**. СУБД не смогла использовать порядок индекса для `ORDER BY` и выполнила дополнительный проход сортировки в оперативной памяти или на диске.
 
+### Наглядно: план и временные операции
+
+```text
+Filter → выбранный access path → JOIN → sort/group
+Using filesort → отдельная сортировка, не обязательно диск
+Estimated rows ↔ actual execution metrics → проверка гипотезы
+```
+
+Столбцы традиционного EXPLAIN не равны фактическому времени. EXPLAIN ANALYZE в поддерживающей версии выполняет запрос и показывает runtime-данные.
+
 ---
 
 ## 3. Настройка параметров конфигурации (`my.cnf`)
@@ -79,6 +99,15 @@ LIMIT 10;
 | `innodb_log_file_size` | 25% от размера Buffer Pool (например, 2G–4G) | Размер файлов журнала повтора (Redo Log). Большой размер сглаживает пики записи при массовых транзакциях |
 | `innodb_flush_log_at_trx_commit` | `1` (строгий ACID) или `2` (для ETL) | При значении `1` Redo Log сбрасывается на диск при каждом коммите. Значение `2` сбрасывает лог в кэш ОС и пишет на диск раз в секунду, ускоряя массовую вставку данных в 5–10 раз |
 | `innodb_file_per_table` | `ON` | Каждая таблица сохраняется в отдельном файле `.ibd`, а не в общей системной табличной области, что позволяет возвращать дисковое пространство ОС при `TRUNCATE` |
+
+### Наглядно: buffer pool и остальные потребители RAM
+
+```text
+RAM = InnoDB buffer pool + per-connection/work memory + ОС + другие процессы
+Большой buffer pool → лучше кэш, но меньше памяти остальным
+```
+
+Фиксированный процент не является универсальной настройкой. Учитывайте concurrency, размер working set и доступную память среды.
 
 ---
 
@@ -99,6 +128,16 @@ pt-query-digest /var/log/mysql/mysql-slow.log > slow_report.txt
 ```
 Утилита сгруппирует запросы по сигнатурам и выведет Топ-10 запросов, генерирующих максимальную нагрузку на сервер (по параметрам Query Time, Lock Time, Rows Sent, Rows Examined).
 
+### Наглядно: какой медленный запрос исправлять первым
+
+```text
+A: 2 с × 1000 запусков; B: 30 с × 2 запуска
+Total A=2000 с; total B=60 с → разные приоритеты по цели
+Slow query → нормализованный шаблон → plan → сверка результата
+```
+
+Порог логирования влияет на видимость частых коротких запросов. Смотрите нагрузку и задержку важных сценариев, а не только самый длинный единичный запрос.
+
 ---
 
 ## 5. Официальные источники и документация вендора
@@ -108,4 +147,3 @@ pt-query-digest /var/log/mysql/mysql-slow.log > slow_report.txt
 - [MySQL 8.4 Reference Manual: Chapter 17 The InnoDB Storage Engine](https://dev.mysql.com/doc/refman/8.4/en/innodb-storage-engine.html) — организация Clustered и Secondary индексов, структура страниц (B+ Tree Page Structure), управление буферным пулом `innodb_buffer_pool_size`.
 - [MySQL 8.4 Reference Manual: Redo Log Configuration](https://dev.mysql.com/doc/refman/8.4/en/innodb-redo-log.html) — параметры `innodb_redo_log_capacity` (начиная с MySQL 8.0.30) и `innodb_flush_log_at_trx_commit`.
 - [Percona Toolkit Documentation: pt-query-digest](https://docs.percona.com/percona-toolkit/pt-query-digest.html) — анализ производительности и профилирование лога медленных запросов.
-

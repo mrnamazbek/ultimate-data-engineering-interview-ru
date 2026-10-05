@@ -73,6 +73,16 @@ WHERE s.type != 'BACKGROUND'
   AND s.status = 'ACTIVE';
 ```
 
+### Наглядно: ROWNUM и сортировка в Oracle
+
+```text
+Строки пришли: salary=[100,300,200]
+ROWNUM<=2, затем ORDER BY → [300,100], максимум 200 уже потерян
+Сначала ORDER BY в подзапросе, затем ограничение → [300,200]
+```
+
+Логика ROWID отличается: это адрес строки, а не постоянный бизнес-ключ. Для bulk processing массив из 1000 элементов сокращает количество переходов SQL↔PL/SQL относительно 1000 одиночных вызовов.
+
 ---
 
 ## 2. Специфика Microsoft SQL Server (T-SQL)
@@ -115,6 +125,16 @@ WITH (
 );
 ```
 
+### Наглядно: область жизни временной таблицы SQL Server
+
+```text
+Connection A: CREATE TABLE #staging → INSERT → SELECT работает
+Connection B: SELECT из #staging A → объект не виден
+Новая задача с новым connection → прежний локальный #staging недоступен
+```
+
+При передаче между задачами используйте подходящее общее хранилище. Для TOP N порядок задают через ORDER BY; массовая загрузка BCP требует договора формата и обработки ошибок.
+
 ---
 
 ## 3. Специфика PostgreSQL для Data Engineer
@@ -149,3 +169,13 @@ WHERE payload @> '{"event_type": "purchase"}';
 -- Создание инвертированного GIN-индекса для ускорения поиска по ключам JSONB
 CREATE INDEX idx_raw_events_payload ON raw_events USING GIN (payload);
 ```
+
+### Наглядно: версии строк PostgreSQL
+
+```text
+UPDATE row: old version → new version
+Старый snapshot может видеть old; новый видит new после commit
+Когда old никому не нужна → VACUUM освобождает место для повторного использования
+```
+
+Обычный VACUUM не обязан уменьшать файл на диске. Длительные транзакции мешают очистке. JSONB хранит структуру документа, но выбор индекса зависит от операции поиска.

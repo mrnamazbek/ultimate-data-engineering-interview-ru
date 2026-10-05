@@ -10,8 +10,8 @@ Python — главный язык разработки пайплайнов, ET
 
 | Структура | Внутреннее устройство | Доступ по индексу / ключу | Поиск элемента (`in`) | Добавление | Удаление |
 |---|---|---|---|---|---|
-| **List** (список) | Динамический массив указателей | $O(1)$ | $O(N)$ | $O(1)$ в конец, $O(N)$ в начало/середину | $O(N)$ |
-| **Dict** (словарь) | Хэш-таблица с открытой адресацией | $O(1)$ в среднем | $O(1)$ по ключу | $O(1)$ в среднем | $O(1)$ |
+| **List** (список) | Динамический массив указателей | $O(1)$ | $O(N)$ | $O(1)$ амортизированно в конец, $O(N)$ в начало/середину | $O(1)$ с конца, $O(N)$ из начала/середины |
+| **Dict** (словарь) | Хэш-таблица с открытой адресацией | $O(1)$ в среднем | $O(1)$ в среднем по ключу | $O(1)$ в среднем | $O(1)$ в среднем |
 | **Set** (множество) | Хэш-таблица (только ключи) | Не поддерживается | $O(1)$ в среднем | $O(1)$ в среднем | $O(1)$ |
 | **Tuple** (кортеж) | Неизменяемый статический массив | $O(1)$ | $O(N)$ | Неизменяем | Неизменяем |
 
@@ -31,6 +31,16 @@ for record in incoming_records:
         process(record)
 ```
 
+### Наглядно: поиск и амортизированная вставка
+
+```text
+1000 строк × поиск в списке из 1000 ID → до 1 000 000 сравнений
+Один set из ID + 1000 проверок → примерно 1000 вставок + 1000 поисков
+list.append обычно дешёвый; иногда resize копирует массив ссылок
+```
+
+O(1) для dict/set — средняя сложность при подходящих ключах. При коллизиях худший случай выше. Подробности: [хеширование](../02-middle/14-hashing-and-deduplication.md).
+
 ---
 
 ## 2. Потоковая обработка данных и генераторы (`yield`)
@@ -44,7 +54,7 @@ import csv
 from typing import Generator, Dict, Any
 
 def stream_large_csv(file_path: str) -> Generator[Dict[str, Any], None, None]:
-    """Лениво читает файл строка за строкой, расходуя фиксированный объем RAM (O(1) по памяти)."""
+    """Лениво читает CSV; память зависит от размера текущей строки, не всего файла."""
     with open(file_path, mode="r", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
@@ -62,6 +72,8 @@ for record in stream_large_csv("big_transactions.csv"):
 from itertools import islice
 
 def chunked_stream(iterable, chunk_size=1000):
+    if chunk_size <= 0:
+        raise ValueError("chunk_size must be positive")
     iterator = iter(iterable)
     while True:
         chunk = list(islice(iterator, chunk_size))
@@ -69,6 +81,16 @@ def chunked_stream(iterable, chunk_size=1000):
             break
         yield chunk
 ```
+
+### Наглядно: память и одноразовый итератор
+
+```text
+Файл → read all → все строки одновременно в RAM
+Файл → generator → одна строка → обработка → следующая строка
+Файл → batches по B строк → память порядка B × размер строки
+```
+
+Генератор расходует память текущей строки/батча, а не всего файла; размер отдельной строки тоже имеет значение. После полного обхода он исчерпан. list(generator) возвращает полную материализацию.
 
 ---
 
@@ -92,6 +114,17 @@ for dept, salary in data:
     grouped_sales[dept].append(salary)
 ```
 
+### Наглядно: группировка и счётчик
+
+```text
+События: [click, view, click]
+Counter → click:2, view:1
+Продажи: [(IT,10),(HR,20),(IT,30)]
+defaultdict(list) → IT:[10,30], HR:[20]
+```
+
+Counter удобен для частот, defaultdict — для накопления значений по ключу. Хранение всех списков всё равно требует памяти, пропорциональной входу.
+
 ---
 
 ## 4. Безопасная работа с СУБД (DB API 2.0 и защита от SQL-инъекций)
@@ -105,16 +138,19 @@ user_input = "10; DROP TABLE users; --"
 query = f"SELECT * FROM users WHERE department_id = {user_input}"
 
 # ПРАВИЛЬНО: Использование параметризованных запросов
-# СУБД экранирует параметры самостоятельно и компилирует план запроса
+# Драйвер передаёт значения отдельно от структуры SQL
+from contextlib import closing
+import os
 import psycopg2
 
-with psycopg2.connect("dbname=analytics user=de_user password=secret") as conn:
-    with conn.cursor() as cur:
-        cur.execute(
-            "SELECT * FROM users WHERE department_id = %s AND is_active = %s;",
-            (10, True)
-        )
-        records = cur.fetchall()
+with closing(psycopg2.connect(os.environ["DWH_DSN"])) as conn:
+    with conn:  # commit/rollback; closing снаружи закрывает соединение
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT user_id FROM users WHERE department_id = %s AND is_active = %s;",
+                (10, True)
+            )
+            records = cur.fetchall()  # только если результат допустим по объёму
 ```
 
 ### Использование серверных курсоров (Server-side cursors)
@@ -122,15 +158,37 @@ with psycopg2.connect("dbname=analytics user=de_user password=secret") as conn:
 
 ```python
 # Именованный курсор заставляет PostgreSQL отдавать данные порциями
-with conn.cursor(name="large_dataset_cursor") as named_cur:
-    named_cur.itersize = 2000 # размер порции сетевого буфера
-    named_cur.execute("SELECT * FROM fact_orders")
-    for row in named_cur: # итерация без единовременной загрузки всех строк в RAM
-        process_row(row)
+with closing(psycopg2.connect(os.environ["DWH_DSN"])) as conn:
+    with conn:
+        with conn.cursor(name="large_dataset_cursor") as named_cur:
+            named_cur.itersize = 2000
+            named_cur.execute("SELECT order_id, amount FROM fact_orders")
+            for row in named_cur:
+                process_row(row)  # прикладная функция обработки строки
 ```
+
+### Наглядно: параметр и SQL-код передаются отдельно
+
+```text
+SQL template: WHERE department_id = %s
+Параметры: (10,) → драйвер передаёт значение по своему протоколу
+Большой результат → server cursor → порции строк → обработка
+```
+
+Параметры применяются к значениям, а не именам таблиц. Для идентификаторов используют безопасные средства драйвера и allowlist. У psycopg2 with conn завершает транзакцию, но не закрывает connection.
 
 ---
 
 ## 5. Практические советы для собеседования
 1. **Разница между `is` и `==`**: оператор `==` проверяет равенство значений объектов, тогда как `is` проверяет идентичность адресов в памяти (`id(a) == id(b)`). Одиночки, такие как `None`, всегда проверяются через `if x is None:`.
 2. **Изменяемые аргументы по умолчанию**: никогда не используйте `def func(data=[])`. Список создается один раз при определении функции, и все последующие вызовы будут модифицировать один и тот же объект. Используйте `def func(data=None): if data is None: data = []`.
+
+### Наглядно: равенство, идентичность и mutable default
+
+```text
+a=[1]; b=[1] → a==b: True; a is b: False
+def f(rows=[]): ... → один список для всех вызовов
+def f(rows=None): ... → новый список внутри каждого нужного вызова
+```
+
+Не полагайтесь на интернирование для сравнения значений. ООП, общие атрибуты и интерфейсы разбираются в [отдельном модуле](06-oop-for-data-engineers.md).
