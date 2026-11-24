@@ -30,7 +30,11 @@
 **Схема задержки.** Время команды на сервере составляет только часть времени, которое видит клиент.
 
 ```mermaid
-flowchart LR
+---
+config:
+  htmlLabels: false
+---
+flowchart TD
     client["Клиент отправляет GET"] --> network["Сеть и очередь на сервере"]
     network --> command["Поиск ключа в памяти"]
     command --> reply["Сериализация и передача ответа"]
@@ -63,6 +67,10 @@ flowchart LR
 **Схема одновременного промаха по одному ключу.**
 
 ```mermaid
+---
+config:
+  htmlLabels: false
+---
 flowchart TD
     requests["1000 запросов одновременно"] --> miss["Один ключ требует обновления"]
     miss --> elected["Один запрос читает источник"]
@@ -193,6 +201,10 @@ sequenceDiagram
 **Схема первичной загрузки.** Снимок и старт потока согласуются через одну границу чтения PostgreSQL.
 
 ```mermaid
+---
+config:
+  htmlLabels: false
+---
 flowchart TD
     boundary["Согласованные snapshot и позиция WAL"] --> base["Прочитать базовое состояние"]
     boundary --> changes["Читать изменения от согласованной позиции"]
@@ -219,6 +231,10 @@ flowchart TD
 **Схема восстановления.** Пример предполагает, что writer записывает идентификатор диапазона источника в том же коммите, который публикует изменения таблицы.
 
 ```mermaid
+---
+config:
+  htmlLabels: false
+---
 flowchart TD
     read["Прочитать батч 43 после checkpoint 42"] --> commit["Опубликовать снимок с батчем 43"]
     commit --> crash["Сбой до сохранения checkpoint"]
@@ -281,6 +297,10 @@ flowchart TD
 **Схема Spark job.** Пример показывает штатное вычисление агрегата по ключу с обменом данными между партициями.
 
 ```mermaid
+---
+config:
+  htmlLabels: false
+---
 flowchart TD
     action["Action запускает вычисление"] --> driver["Driver строит план и назначает tasks"]
     manager["Менеджер кластера выделяет ресурсы"] --> executors["Executors"]
@@ -578,6 +598,10 @@ raw → clean ─┬→ mart
 **Схема замены пары из модели и индекса.**
 
 ```mermaid
+---
+config:
+  htmlLabels: false
+---
 flowchart TD
     docs["Документы, версии и права доступа"] --> old["Модель A для документов и индекс v1"]
     docs --> fresh["Модель B для документов и индекс v2"]
@@ -601,6 +625,10 @@ flowchart TD
 **Схема гибридного поиска.**
 
 ```mermaid
+---
+config:
+  htmlLabels: false
+---
 flowchart TD
     query["Запрос и контекст доступа"] --> lexical["Поиск по словам и идентификаторам"]
     query --> semantic["Поиск по смыслу"]
@@ -639,6 +667,10 @@ flowchart TD
 **Схема поиска с ограниченным числом шагов.**
 
 ```mermaid
+---
+config:
+  htmlLabels: false
+---
 flowchart TD
     ask["Определить, на какой вопрос нужен ответ"] --> budget{"Остался ли бюджет?"}
     budget -->|Да| search["Вызвать разрешённый инструмент"]
