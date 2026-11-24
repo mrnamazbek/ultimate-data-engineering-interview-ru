@@ -133,6 +133,7 @@ flowchart TD
 5. [software-engineering-speedrun-qa.md](04-interview-cheatsheets/software-engineering-speedrun-qa.md) — 30 блиц-вопросов по ООП и разработке ПО в Data Engineering.
 6. [common-de-interview-questions.md](04-interview-cheatsheets/common-de-interview-questions.md) — 35 дополнительных вопросов с контрпримерами: NULL, JOIN, окна, deadlock, коллизии, Kafka, checkpoint, SCD2, CDC и BI-метрики.
 7. [karpov-materials-map.md](04-interview-cheatsheets/karpov-materials-map.md) — Карта девяти разделов курса Karpov DE с привязкой к конспектам и практическим вопросам.
+8. [linkedin-saved-posts-qa.md](04-interview-cheatsheets/linkedin-saved-posts-qa.md) — 45 вопросов с ответами и примерами по темам из LinkedIn, включая Redis, CDC, Spark, dbt Mesh, алгоритмы и RAG.
 
 ### 05-dbms-optimization: Оптимизация и тюнинг производительности СУБД
 1. [01-universal-sql-optimization.md](05-dbms-optimization/01-universal-sql-optimization.md) — Универсальные правила: чтение `EXPLAIN`, SARGable предикаты, курсорная пагинация (Keyset Pagination) против `OFFSET`, устранение антипаттерна N+1.

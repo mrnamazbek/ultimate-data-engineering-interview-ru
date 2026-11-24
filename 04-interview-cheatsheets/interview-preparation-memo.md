@@ -14,7 +14,7 @@
 
 1. **День 1:** SQL на маленьких таблицах; NULL, дубли JOIN, окна. Python: генераторы, mutable defaults, хешируемость. Напишите Reader/Writer с тестовыми зависимостями.
 2. **День 2:** Airflow/Spark/DWH под стек вакансии. Разберите падение после записи, retry, backfill, skew, SCD2 и late data. Нарисуйте путь данных.
-3. **День 3:** один пробный раунд с таймером, один system design, две истории из опыта. Повторите [дополнительные DE-вопросы](common-de-interview-questions.md) и [блиц по разработке](software-engineering-speedrun-qa.md).
+3. **День 3:** один пробный раунд с таймером, один system design, две истории из опыта. Для повторения подойдут [дополнительные DE-вопросы](common-de-interview-questions.md), [блиц по разработке](software-engineering-speedrun-qa.md) и [вопросы по темам из LinkedIn](linkedin-saved-posts-qa.md).
 
 При другой доступной длительности сохраните порядок и уменьшите число тем; этот план не обещает освоение всего стека за три дня.
 
